@@ -1,0 +1,26 @@
+﻿Wet or dry in 2016,cat_pred
+Burned (B) vs. unburned (U),cat_pred
+site,meta
+date,meta
+year,meta
+agency,meta
+Latitude,meta
+Longitude,meta
+Max.depth.m,pred
+Q estimate (m3/s),pred
+Average.canopy.cover,pred
+Conductivity.uS.cm.,pred
+Point.Minimum.DO.mg.L,pred
+PctCover,pred
+Total inverts,pred
+Thermal index,pred
+trout.present..absent,response
+A..0...1.99.inch.trout.,response
+B..2.3.99.inch.trout.,response
+C..4.5.99.inch.trout.,response
+D..6.7.99.inch.trout.,response
+E..8.9.99.inch.trout.,response
+F..10.11.99.inch.trout.,response
+G..12.13.99.inch.trout.,response
+H..14.15.99.inch.trout.,response
+total.trout,response

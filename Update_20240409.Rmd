@@ -1,0 +1,393 @@
+---
+title: "Recommendations for Potential Analyses"
+author: "Bart DiFiore"
+date: "2024-04-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, include = F, warning = F, message = F)
+```
+
+```{r}
+library(tidyverse)
+library(DHARMa)
+
+df <- read.csv("Data/cleaned_20240408.csv")
+
+
+```
+
+
+Hi all, I've had a chance to dig into the data a bit and wanted to outline some of my recommendations and potential paths forward. As we discussed, we are very limited by the size of the dataset. Therefore, we will need to be **cautious** with any inferences that we draw. However, I do think there are some potentially interesting avenues we could pursue. Some of these choices may not be what you originally had planned for the data set. As an analysist on this project, I'm happy to proceed in whatever manner you choose. 
+
+Here I'll start by outlining some of the limitations, and then  outline a few potential solutions.
+
+# Data Limitations
+
+Right now the data set has 37 observations. In itself that isn't a problem. However there are currently over 120 potential predictor variables in the data set. I fully understand that you don't want to utilize all predictors. However, the simplified predictor variables document that Scott sent along outlines an interest in two crossed categorical predictors and nine continuous predictors. In a simple multiple-linear regression with no interactions that would mean estimating 13 parameters, which is doable with 37 observations. However there were multiple observations collected at 8 of the 30 sites. This would suggest a random effect of site. However, including a random effect of site would mean estimating an additional 30 parameters (e.g. a different random intercept for each site), which means 43 parameters total. And that would far exceed what we can extract from the data (n = 37).
+
+An additional complication is that many of the response and predictor variables that Scott included in the simplified variables doc include NA's. For instance, total trout abundance was only estimated at 34 of the 37 sites (and similarly the estimates for trout within size classes). Similarly, the variable *pct_cover* is only estimated at 24 of the 37 sites. Including that variable immediately reduces the sample size of our model matrix to 24. So one of the requirements is that once we settle on the unit of replication (e.g. are we going to use the 2016 data???), we only include predictor variables and response variables (see below) that are estimated at each site.
+
+In terms of the response variables, I would advise that we focus on trout presence/absence as a binary response. While it would be interesting to model trout abundance / density we have two issues: 
+
+1. How do we deal with the dimensionality issues that we have discussed? e.g. is it abundance per m2 or m3? How do we account for different sampling effort? (e.g. similar to issues of standardizing CPUE in the fisheries lit)
+
+2. With 37 points the highly overdispersed and zero inflated distribution of the response is going to require more complex models in which more parameters must be estimated. Fig. 1 is a modified histogram of total trout abundance. Based on this data distribution we would need to use a zero-inflated model with a negative binomial distribution--both of which require additional parameters.
+
+```{r include = T, fig.cap="Figure 1. Modified histogram of total trout abundance. Height represents the number of observations of trout in each abundance category."}
+
+df %>% 
+  mutate(trout_cats = cut(total_trout, breaks = c(-1,0.1,10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, max(df$total_trout, na.rm = T)), labels = c("0", "1-10", "11-20", "21-30", "31-40", "41-50", "51-60", "61-70", "71-80", "81-90", "91-100", "101-110", "111-120", "121-130", "130-max"))) %>%
+  group_by(trout_cats) %>%
+  ggplot(aes(x = trout_cats))+
+  geom_bar()+
+  labs(x = "Abundance categories", y = "Frequency")
+
+
+```
+
+Therefore, I would suggest that for the time being we model trout presence/absence as we did in the recent paper [Cooper et al. 2024](https://onlinelibrary.wiley.com/doi/full/10.1111/fwb.14212). 
+
+# Potential solutions
+
+So I'll quickly list the paths that I see moving forward from simplest to more complex. Then I'll dig into each of them.
+
+1. Model trout presence/absence as a function of key predictors that are *not* strongly collinear ($\leq 5$ predictor variables) using a simple glm framework. (I think this one is the least interesting)
+
+2. Build an even simpler SEM that the one that Scott depicted in the simplified predictor document, containing ($\leq 7$) *continuous* predictors. (I think this one could get at *some* of the questions you were hoping to address)
+
+3. Use a latent-state variable approach to estimate a "stream condition index" for trout presence. (I think this is the most interesting approach, although somewhat of a departure from what you had planned)
+
+## Option 1: Simple glm()
+
+```{r include = T, warning=F, echo=F, fig.cap="Figure 2. Pairs plot and correlations between predictor variables included in Scott's simplified variable document."}
+
+df_mod <- df %>% 
+  rename(b_u = burned_b_vs_unburned_u, 
+         max_depth = max_depth_m, 
+         avg_canopy = average_canopy_cover, 
+         conduct = conductivity_u_s_cm, 
+         do = point_minimum_do_mg_l, 
+         q = q_estimate_m3_s, 
+         avg_chlorophyll = average_chlorophyll_a_mg_m2) %>%
+  mutate(trout = as.integer(ifelse(trout_present_absent == "P", 1, 0)), 
+         b_u = as.factor(b_u))
+
+df_mod %>%
+  select(max_depth:pct_cover, total_inverts, thermal_index) %>% 
+  GGally::ggpairs()
+
+
+```
+
+Figure 2 demonstrates the potential collinearity between predictors in a simple glm() framework. In itself this isn't a problem unless there is multicollinearity in the residuals. Lets build out the model and test for that using the variance inflation factor (vif). 
+
+```{r echo = T}
+
+mod1 <- glm(trout ~ max_depth + q + avg_canopy + conduct + do + pct_cover + thermal_index + avg_chlorophyll + total_inverts, data = df_mod, family = "binomial")
+summary(mod1)
+data.frame(vif = car::vif(mod1))
+
+```
+VIF's should be less than at least 5 to claim that collinearity isn't an issue. So this model is certainly not specified correctly if our intent is the separate the effects of each predictor on the response. Let's try and transforming some of the predictors. Occasionally, this can reduce collinearity. 
+
+```{r include = T}
+
+df_mod2 <- df_mod %>%
+  mutate(q_log = log(q), 
+         avg_canopy_logit = qlogis(avg_canopy/100), 
+         conduct_log = log(conduct))
+
+mod2 <- glm(trout ~ scale(max_depth) + scale(q_log) + scale(avg_canopy_logit) + scale(conduct_log) + scale(do) + scale(pct_cover)+ scale(thermal_index) + scale(avg_chlorophyll) + scale(total_inverts), data = df_mod2, family = "binomial")
+#summary(mod2)
+data.frame(vif = car::vif(mod2))
+
+```
+Doesn't seem to do anything to the multicollinearity issue...
+
+Let's try a different model that may get at some of your questions but with different predictors. Lets pick one environmental variable, lets try conductivity as it is an index of stream quality.
+
+```{r include = T}
+
+
+mod3 <- glm(trout ~ scale(conduct_log) + scale(avg_chlorophyll) + scale(total_inverts), data = df_mod2, family = "binomial")
+summary(mod3)
+car::vif(mod3)
+
+
+```
+
+This model doesn't have issues with collinearity, but it isn't wholly that informative. It suggests that conductivity is important to the probability of trout presence. And that there is little indication that algae (avg_chlorophyll) or inverts influence the probability of trout presence. We can plot the effect of conductivity on trout presence: 
+
+```{r}
+library(ggeffects)
+plot(ggpredict(mod3, terms = "conduct_log[all]"))
+
+```
+
+
+We might be having issues because the pct_cover variables is really reducing our sample size down to 24 sites. Lets cut that and try to rerun some of these models.
+
+```{r include = T}
+
+mod1 <- glm(trout ~ max_depth + q + avg_canopy + conduct + do + thermal_index + avg_chlorophyll + total_inverts, data = df_mod, family = "binomial")
+summary(mod1)
+data.frame(vif = car::vif(mod1))
+plot(simulateResiduals(mod1))
+```
+
+
+```{r include = T}
+
+mod2 <- glm(trout ~ scale(max_depth) + scale(q_log) + scale(avg_canopy_logit) + scale(conduct_log) + scale(do) +  scale(thermal_index) + scale(avg_chlorophyll) + scale(total_inverts), data = df_mod2, family = "binomial")
+data.frame(vif = car::vif(mod2))
+summary(mod2)
+plot(simulateResiduals(mod2))
+
+```
+
+So there doesn't appear to be any issues with multicollinearity once we drop the pct_cover variable, which is a good thing. The model residuals also look acceptable. From this analysis it appears that the only variable related to the probability of trout presence is conductivity. Where increases in conductivity decrease the probability of trout presence. We can visualize the partial regression plot. 
+
+```{r include = T}
+
+
+
+plot(ggpredict(mod2, terms = "conduct_log[all]"), rawdata = T)
+
+
+```
+
+While the VIF for this model suggests that the multicollinearity isn't an issue. I suspect that the fact that the only variable that appears correlated with trout presence is an indication that collinearity is still an issue with model interpretation. 
+
+```{r include = T, warning = F}
+df_mod2 %>%
+  select(max_depth, q_log, avg_canopy_logit, conduct_log, do, thermal_index, avg_chlorophyll, total_inverts) %>%
+  GGally::ggpairs()
+```
+
+Conductivity is strongly correlated with almost every other variable. So I do suspect that despite the low VIF scores this is causing issues in model interpretation.
+
+Long story short, we could certainly use a glm() approach. However, I think we will be very limited in the inference we can draw from these models due to the implicit collinearity of the predictors you are interested in. 
+
+
+## Option 2: SEM
+
+As SEM (structual equation model) approach could be powerful in this situation because it allows us to model cascading influences of variables. While it would be very interesting to fit the model that Scott diagrammed in the word document, I think that would be far too complex for this data set. Lets try and reduce the number of variables and fit a simplified version of the model. 
+
+```{r}
+
+library(dagitty)
+library(ggdag)
+
+
+# coords <- list(
+#   x = c(Trout = 0, Inverts = 0, Algae = 0, Thermal_index = 0, Max_depth = -2, Conducivity = 2),
+#   y = c(Trout = 0, Inverts = 1, Algae = 2, Thermal_index = 3, Max_depth = 4, Conductivity = 4)
+# )
+
+dag1 <- dagify(Trout ~ Inverts,
+               Inverts ~ Algae, 
+               Algae ~ Thermal_index, 
+               Thermal_index ~ Max_depth,
+               Max_depth ~ Conductivity)
+               
+# coordinates(dag1) <- coords
+
+plot(dag1)
+
+
+
+```
+Here is a plot of the DAG. This is obviously a hypersimplified hypothesis of the relationships. Lets fit the SEM for this hypothesis. 
+
+```{r include = T, echo = T}
+
+library(piecewiseSEM)
+
+sem1 <- psem(
+  lm(max_depth ~ conduct_log, df_mod2),
+  lm(thermal_index ~ max_depth, df_mod2),
+  lm(avg_chlorophyll ~ thermal_index, df_mod2),
+  lm(total_inverts ~ avg_chlorophyll, df_mod2),
+  glm(trout ~ total_inverts, df_mod2, family = "binomial")
+)
+
+summary(sem1)
+plot(sem1)
+
+```
+
+So the global goodness-of-fit test suggest that this model isn't a good representation of the data. The tests of directed separation suggest including two additional paths: thermal_index ~ conductivity and trout ~ conductivity. Lets include these paths and refit the model. 
+
+
+```{r include = T, echo = T}
+sem2 <- psem(
+  lm(max_depth ~ conduct_log, df_mod2),
+  lm(thermal_index ~ max_depth + conduct_log, df_mod2),
+  lm(avg_chlorophyll ~ thermal_index, df_mod2),
+  lm(total_inverts ~ avg_chlorophyll, df_mod2),
+  glm(trout ~ total_inverts + conduct_log, df_mod2, family = "binomial")
+)
+
+summary(sem2)
+plot(sem2)
+```
+
+We can see that the Global goodness of fit statistics now suggest that the model is a apt representation of the data (or at least that we fail to reject the null hypothesis that the model is a poor representation of the data). There are also no additional paths suggested by the tests of directed separation. What I draw from this model, in addition to the glm() work previously, is that conductivity is a key predictor of trout presence. Also, at least in this data set, there is little evidence for a bottom up cascade extending from stream condition ---> algae ---> prey ---> trout. Rather conductivity seems to be a key predictor of many other environmental variables, and is strongly correlated with the probability of trout presence.
+
+
+## Option 3: Latent-variable approach
+
+The most interesting option (in my opinion) is to analyze the data using a latent-variable SEM style approach. I think that the advantage of this approach is that the goal of the paper could really be about developing an index of stream quality that is a strong predictor of trout presence. I feel like this would be something of interest to the U.S. forest service / California DFW? The general idea is that we have all these indicators of stream quality. Each of these indicators contributes something to an overall index of stream quality--a latent state that we cannot observe but we believe exists--and it is this overall index that we think is connected to trout presence. 
+
+There are two ways that I know of to fit latent state SEM's. The first is using the "Lavann" package in R. This is a decently user friendly approach, and I'll give it an initial attempt in some code below. The more powerful way we could fit this latent-state SEM is using Bayesian approaches. Most of the stats that I'm currently doing use Bayesian methods and this wouldn't be much of a stretch. The models are all custom built from scratch. So before I go into constructing one, I would need to know that you want to proceed in this direction. The power of fitting the model using Bayesian methods is that we could generate predictions across space for our latent state--stream quality--and robust confidence intervals for those predictions. Given our data limitations, this paper would likely be limited to in-sample predictions. In other words, we could produce a map of stream quality at the sites you sampled. However, the power would be that future field efforts may be able to just collect key indicators (conductivity) and generate predictions (think the probability of trout presence) based on those indicators. 
+
+If you want to read about a really cool application for latent state modeling check out Chris Brown's recent [paper](https://www.sciencedirect.com/science/article/pii/S0048969723002851). This paper is what gave me the idea to use a latent variable approach. And Chris Brown made all the code accessible including tutorials [here](https://www.seascapemodels.org/rstats/2023/06/15/bayesian-sem-tute.html) and [here](https://github.com/cbrown5/ecological-condition-latent-model). One thing to note in this paper is that their entire analysis is based off of a time series of annual observations over ~ 30 years. So at least we would have some justification for using a similar approach to our data set of a similar size.
+
+Before diving into the Bayesian approach, let me try and get some Lavaan code up and running.
+
+```{r echo = T, include = T}
+library(lavaan)
+
+lv1 <- '
+# latent
+quality =~ q_log + thermal_index + avg_canopy_logit + conduct_log + do + max_depth
+
+# structural paths
+trout ~ quality
+
+# correlated errors
+'
+
+lv1_mod <- sem(lv1, df_mod2, std.lv = T)
+
+summary(lv1_mod, standardized = T)
+
+
+# library(lavaanPlot)
+# lavaanPlot(lv1_mod)
+
+
+```
+
+The excerpt above is a pretty complex summary of the lavaan SEM output. There are a few things to note. First the p-value on the Chi-square test indicates the model is a potentially accurate representation of the data (technically, we fail to reject the null hypothesis that the model doesn't fit the data. And yes its funky because we are looking for $p \geq 0.05$). If you look at the "Latent Variables:" portion of the table you can see the loadings (e.g. "Estimates") of each of the exogenous indicators on the latent state, which here I've called "quality" (short for stream quality). Much of this is consistent with previous analyses. Everything (except DO) significantly loads on the latent state ($p \leq 0.05$). If you look at the "Std.all" column you can see standardized estimates of the loadings. So the indicator that loads the strongest is conductivity (technically the log of conductivity), followed by thermal index, the logit of average canopy, max depth, and finally q (or discharge). Finally, and likely most important, we can look at the "Regression" table. I a priori assumed that the latent state, quality, predicted trout presence. We can see that indeed, trout presence was significantly related to the latent variable, stream quality. Furthermore, the standardized magnitude of this effect was high (0.699) relative to the loadings of the indicators on the latent state. 
+
+Plotting these up in R is a bit tricky but here a crude attempt. 
+
+```{r include = T}
+
+library(dagitty)
+library(ggdag)
+
+
+coords <- list(
+  x = c(Trout = 2, 
+        q_log = 0, 
+        thermal_index = 0, 
+        avg_canopy_logit = 0, 
+        conduct_log = 0, 
+        do = 0, 
+        max_depth = 0, 
+        quality = 1),
+  y = c(Trout = 2.5, 
+        q_log = 5, 
+        thermal_index = 4, 
+        avg_canopy_logit = 3, 
+        conduct_log = 2, 
+        do = 1, 
+        max_depth = 0, 
+        quality = 2.5)
+)
+
+dag1 <- dagify(q_log ~ quality, 
+               thermal_index ~ quality, 
+               avg_canopy_logit ~ quality, 
+               conduct_log ~ quality, 
+               do ~ quality, 
+               max_depth ~ quality,
+               Trout ~ quality, 
+               coords = coords)
+
+# tidy_dagitty(dag1)
+# 
+# ggdag::ggdag(dag1)
+
+
+estimates <- summary(lv1_mod, standardized = T)$pe[1:7, ] %>% 
+  select(rhs, lhs, std.all) %>%
+  mutate(x = ifelse(lhs == "quality", 0.3, 1.5), 
+         y = c(4.8, 3.75, 3, 2.25, 1.5, 0.5, 2.75), 
+         std.all = round(std.all, 2))
+
+tidy_dagitty(dag1, layout = "fr") %>%
+  mutate(latent = ifelse(name == "quality", "latent", "indicator"), 
+         size_cat = ifelse(name %in% c("quality", "Trout"), "large", "small"), 
+         significance = ifelse(to == "do", "dashed", "solid")) %>%
+  ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_node(aes(shape = latent, size = size_cat), show.legend = F, alpha = 0.25)+
+  scale_shape_manual(values = c(15, 16))+
+  scale_size_manual(values = c(40, 20))+
+  geom_dag_text(color = "black") +
+  geom_dag_edges(aes(edge_linetype = significance), show.legend = F) +
+  scale_linetype_manual(values = c(1,5))+
+  annotate(geom = "text", x = estimates$x, y = estimates$y, label = estimates$std.all)+
+  theme_dag()
+
+
+# # coordinates(dag1) <- coords
+# 
+# plot(dag1)
+
+
+
+
+```
+
+All this goes to say: environmental indicators load onto a latent state variable, that we will call stream quality. And stream quality is a good predictor of trout presence. The arrows in this figure are a bit tricky to interpret. You would expect the arrows to go **from** the indicators (environmental variables) **to** the latent state. However, in the parlance of SEM, the latent state is thought to be an emergent property of the indicators. Therefore, the arrows extend from the latent state to the indicators. Conversely, the arrow from quality to trout points in the same direction (from latent state to trout). However, the interpretation is different. Here, we have assumed that the latent state is predicting trout presence. 
+
+We could stop here if you wished. However, one of the deficiencies of lavaan is that we cannot use different data distributions. So here the regression trout ~ quality is a simple linear regression. Trout is a binary predictor (0, 1), so really it should be modeled as a glm(..., family = binomial(link = "logit")). However, that isn't possible in lavaan. Furthermore, generating predictions and CI's from lavaan is not intuitive or strait-forward. I don't think that building out the model in STAN (Bayesian analysis) would be particularly onerous, BUT I do think it would add significantly to the logic of the paper and the story. So I would recommend going that direction if you choose to pursue the latent state modeling approach.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
