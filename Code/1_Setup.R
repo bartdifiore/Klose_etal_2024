@@ -10,7 +10,7 @@ library(tidyverse)
 ## Get data and clean
 #----------------------------------
 
-df <- read.csv("Data/Data_20240408.csv")
+df <- read.csv("Data/Data_20251130.csv")
 
 
 filter_cols <- read.csv("Data/Variables_of_interest.csv", header = F)
@@ -21,7 +21,7 @@ df <- df[, names(df) %in% c(cols, "Burned..B..vs..unburned..U.", "Wet.or.dry.in.
   janitor::clean_names() %>%
   mutate(across(where(is.character), ~na_if(., "n/a")))
   
-write.csv(df, "Data/cleaned_20240408.csv", row.names = F, quote = F)
+write.csv(df, "Data/cleaned_20251130.csv", row.names = F, quote = F)
 
 
 #----------------------------------

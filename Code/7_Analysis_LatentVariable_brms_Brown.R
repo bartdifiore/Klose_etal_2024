@@ -255,7 +255,7 @@ model3_formula <-
 # Using student_t(3, 0, 2.5) as recommended for regularizing logistic regression
 priors3 <-
   prior(normal(0, 1), class = "sigma", resp = "streamquality") +
-  prior(exponential(1.8), class = "b", coef = "mistream_quality", resp = "thermalscaled", lb = 0) +
+  prior(exponential(1.8), class = "b", coef = "mistream_quality", resp = "thermalscaled") +
   prior(normal(0, 5), class = "b", coef = "mistream_quality", resp = "conductlogscaled") +
   prior(normal(0, 5), class = "b", coef = "mistream_quality", resp = "maxdepthscaled") +
   prior(normal(0, 5), class = "b", coef = "mistream_quality", resp = "doscaled") +
@@ -315,7 +315,7 @@ model4_formula <-
 # Same priors as Model 3 (includes regularizing prior on trout loading)
 priors4 <-
   prior(normal(0, 1), class = "sigma", resp = "streamquality") +
-  prior(exponential(1.8), class = "b", coef = "mistream_quality", resp = "thermalscaled", lb = 0) +
+  prior(exponential(1.8), class = "b", coef = "mistream_quality", resp = "thermalscaled") +
   prior(normal(0, 5), class = "b", coef = "mistream_quality", resp = "conductlogscaled") +
   prior(normal(0, 5), class = "b", coef = "mistream_quality", resp = "maxdepthscaled") +
   prior(normal(0, 5), class = "b", coef = "mistream_quality", resp = "doscaled") +
@@ -331,10 +331,10 @@ model4_fit <- brm(
   data = df_mod,
   prior = priors4,
   chains = 4,
-  iter = 4000,
-  warmup = 2000,
+  iter = 8000,
+  warmup = 4000,
   seed = 123,
-  control = list(adapt_delta = 0.95, max_treedepth = 12),
+  control = list(adapt_delta = 0.99, max_treedepth = 15),
   file = "Models/brms_model4_brown_full",
   file_refit = "always"
 )

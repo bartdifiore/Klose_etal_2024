@@ -1,7 +1,7 @@
 library(tidyverse)
 
 
-df <- read.csv("Data/cleaned_20240408.csv")
+df <- read.csv("Data/cleaned_20251130.csv")
 
 
 # Look for collinearity of predictors
@@ -53,6 +53,15 @@ df_mod %>%
   group_by(burned_b_vs_unburned_u, wet_or_dry_in_2016_1) %>%
   summarize(count = n() )
 
+
+df %>% 
+  ggplot(aes(x = wet_or_dry_in_2016_1, y = max_depth_m))+
+  geom_boxplot()
+
+
+df %>% 
+  ggplot(aes(x = wet_or_dry_in_2016_1, y = conductivity_u_s_cm))+
+  geom_boxplot()
 
 
 

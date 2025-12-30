@@ -1,0 +1,11 @@
+Questions for Klose et al. 2024 Analysis
+==========================================
+
+1. Where is the Q estimate (discharge/flow) variable in the 2025 dataset?
+   - Present in Data_20240408.csv (column 21: "Q estimate (m3/s)")
+   - Missing from Data_20251130.csv (column 21 is now "Average.canopy.cover")
+   - Was this variable intentionally removed or is it available under a different name?
+   - Impact: The lavaan latent variable model (5_Analysis_LatentVariable.R) used 6 indicators
+     including Q, but the brms models (files 6 & 7) only use 4-5 indicators without Q
+   - This may affect model identification and convergence in Bayesian models
+

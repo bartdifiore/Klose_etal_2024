@@ -1,0 +1,6 @@
+# 12/1/25
+  - I reviewed Jarret Byrenes wiki https://jebyrnes.github.io/bayesian_sem/bayesian_sem.html#latent-variables
+  - Could implement the model in STAN. However, it might be more straight forward to use brms. Excellent resource on how to set up the model. brms can handle latent state variables. Also good code for the daggify figures.
+  - Idea on model structure: Can we distinguish the effects of fire and drought on stream quality? not sure. But essentially the idea would be to have exogenous variables for burn status and previous year wet/dry. Those would impact separate environmental characteristics. The continuous envrionmental characterisitics would impact the latent state, stream quality, which in turn would impact BOTH trout presence/absence and given trout presence trout abundance
+  
+  
