@@ -23,6 +23,26 @@
 
 # 12/28/2025
   - Worked 10-2 BUT work would have taken 8-10 hours. 
+
+# 12/29/2025
+  - Worked 9-11:30 pm BUT work would have taken at least 6 hours. 
+
+# 12/30/2025
+  - worked 1 hour worth 2
+
+-----------> All previous billed to pay period ending 1/3/2024 -----------------> 
+
+# 1/4/2026
+  - 2 hours, required trainings (entered on pay period starting 1/4)
+
+# 1/10/2025
+  - 6 hours, troubleshooting and validating models. Ran Brown et al. to test assumptions. Built .md file summarizing modeling to date. Determined the alpha intercepts were leading to unidentified parameters. Got models to converge well. However, still concerns about the number of effective parameters to the amount of data. Attempted to build heirarichal models that dealt with repreated observations in multiple years (did not converge properly). Ended by exploring the construction of a hurdle model (trout abundance | trout prescence) and classifying sites into catchments. Catchment classification will likely need to be done by Klose and Cooper. Built interactive leaflet map of sites.  
+
+# 1/11/2025
+  - 10 hours, constructed 5 publication quality figures. Finished troubleshooting models. Settled on a model w/ a hurdle component. Still ambiguity regarding whether there should be an intercept in the predictor component of the model. Constructed one with the intercept and it fit adequately. Figures show predictor ---> latent, latent ---------> environmental indicators, latent -------> trout abundance | trout presence. 
+
+# 1/12/2025
+  - 2 hours, relaxed priors in model. Included an intercept in the predictor component. Rebuilt all figures. Built table of prior summary. 
   
 
 	

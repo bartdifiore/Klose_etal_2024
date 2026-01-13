@@ -1,4 +1,4 @@
-// Bayesian Latent Variable Model for Stream Quality - Full Model
+// Bayesian Latent Variable Model for Stream Quality - Hierarchical Model v2
 // Based on Scott Brown's ecological condition model
 // https://github.com/cbrown5/ecological-condition-latent-model
 //
@@ -6,8 +6,11 @@
 // - Latent variable "stream_quality" (nu) represents unobserved stream condition
 // - 6 environmental indicators: conductivity, depth, DO, thermal, canopy, Q
 // - Predictors: burned status, wet/dry (drought)
+// - Hierarchical shrinkage on latent variable variance (SIMPLIFIED)
 // - Outcome: trout presence/absence
-// - Latent variable follows normal distribution with mean predicted by burn/drought
+//
+// V2 changes: Removed year random effects to fix identification issues
+// Focus on hierarchical shrinkage of latent variable only
 
 data {
   int<lower=1> N;  // Number of observations
@@ -29,8 +32,11 @@ data {
 }
 
 parameters {
-  // Latent variable: stream quality for each observation
-  vector[N] stream_quality_raw;  // Non-centered parameterization
+  // Latent variable: stream quality for each observation (non-centered)
+  vector[N] stream_quality_raw;
+
+  // Hierarchical shrinkage on latent variable
+  real<lower=0> sigma_quality;  // SD of latent variable deviations
 
   // Factor loadings (how strongly each indicator reflects stream quality)
   real beta_conduct;
@@ -84,8 +90,9 @@ transformed parameters {
   // Stream quality predicted by burn and drought (no intercept for identification)
   stream_quality_hat = beta_burned * burned + beta_wet * wet;
 
-  // Non-centered parameterization: stream_quality ~ normal(stream_quality_hat, 1)
-  stream_quality = stream_quality_hat + stream_quality_raw;
+  // Non-centered parameterization with hierarchical shrinkage
+  // stream_quality ~ normal(stream_quality_hat, sigma_quality)
+  stream_quality = stream_quality_hat + stream_quality_raw * sigma_quality;
 
   // Linear predictor: indicator = intercept + loading * stream_quality
   conduct_hat = a_conduct + beta_conduct * stream_quality;
@@ -103,7 +110,11 @@ model {
   // Prior on latent variable (non-centered)
   stream_quality_raw ~ std_normal();
 
-  // Priors on stream quality predictors (no intercept for identification)
+  // Hierarchical prior on latent variable variance
+  // This is the KEY regularization parameter
+  sigma_quality ~ exponential(2);  // Strong regularization (mean = 0.5)
+
+  // Priors on stream quality predictors
   // Tighter priors for stronger regularization with small sample size
   beta_burned ~ normal(0, 0.5);
   beta_wet ~ normal(0, 0.5);

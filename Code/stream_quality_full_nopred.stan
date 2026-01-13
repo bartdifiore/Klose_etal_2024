@@ -1,13 +1,13 @@
-// Bayesian Latent Variable Model for Stream Quality - Full Model
+// Bayesian Latent Variable Model for Stream Quality - Full Model (No Predictors)
 // Based on Scott Brown's ecological condition model
 // https://github.com/cbrown5/ecological-condition-latent-model
 //
 // Model structure:
 // - Latent variable "stream_quality" (nu) represents unobserved stream condition
 // - 6 environmental indicators: conductivity, depth, DO, thermal, canopy, Q
-// - Predictors: burned status, wet/dry (drought)
+// - NO predictors on latent variable
 // - Outcome: trout presence/absence
-// - Latent variable follows normal distribution with mean predicted by burn/drought
+// - Latent variable follows standard normal distribution
 
 data {
   int<lower=1> N;  // Number of observations
@@ -20,17 +20,13 @@ data {
   vector[N] canopy_logit;
   vector[N] q_log;
 
-  // Predictors of stream quality (0/1 coded)
-  vector[N] burned;     // 1 = burned, 0 = unburned
-  vector[N] wet;        // 1 = wet, 0 = dry
-
   // Outcome
   int<lower=0, upper=1> trout[N];  // Binary: 1 = present, 0 = absent
 }
 
 parameters {
   // Latent variable: stream quality for each observation
-  vector[N] stream_quality_raw;  // Non-centered parameterization
+  vector[N] stream_quality;  // Centered parameterization
 
   // Factor loadings (how strongly each indicator reflects stream quality)
   real beta_conduct;
@@ -56,10 +52,6 @@ parameters {
   real<lower=0> sigma_canopy;
   real<lower=0> sigma_q;
 
-  // Effects of burn and drought on stream quality
-  real beta_burned;   // Effect of burn on stream quality
-  real beta_wet;      // Effect of wet vs dry on stream quality
-
   // Effect of stream quality on trout presence
   real beta_trout;    // Logistic regression coefficient
   real alpha_trout;   // Logistic regression intercept
@@ -74,18 +66,8 @@ transformed parameters {
   vector[N] canopy_hat;
   vector[N] q_hat;
 
-  // Predicted stream quality and actual stream quality
-  vector[N] stream_quality_hat;
-  vector[N] stream_quality;
-
   // Predicted probability of trout presence
   vector[N] trout_logit;
-
-  // Stream quality predicted by burn and drought (no intercept for identification)
-  stream_quality_hat = beta_burned * burned + beta_wet * wet;
-
-  // Non-centered parameterization: stream_quality ~ normal(stream_quality_hat, 1)
-  stream_quality = stream_quality_hat + stream_quality_raw;
 
   // Linear predictor: indicator = intercept + loading * stream_quality
   conduct_hat = a_conduct + beta_conduct * stream_quality;
@@ -100,13 +82,8 @@ transformed parameters {
 }
 
 model {
-  // Prior on latent variable (non-centered)
-  stream_quality_raw ~ std_normal();
-
-  // Priors on stream quality predictors (no intercept for identification)
-  // Tighter priors for stronger regularization with small sample size
-  beta_burned ~ normal(0, 0.5);
-  beta_wet ~ normal(0, 0.5);
+  // Prior on latent variable (standard normal)
+  stream_quality ~ std_normal();
 
   // Priors on intercepts (weakly informative, centered at 0)
   a_conduct ~ normal(0, 10);

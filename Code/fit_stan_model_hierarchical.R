@@ -1,7 +1,8 @@
 #--------------------------------
-## Fit Full Stan latent variable model
+## Fit Hierarchical Stan latent variable model
 ## Using rstan
 ## Includes: 6 indicators, burn/drought predictors, trout outcome
+## NEW: Year-level random effects + hierarchical shrinkage
 #--------------------------------
 
 library(tidyverse)
@@ -33,7 +34,11 @@ df_mod <- df %>%
 
     # Categorical predictors (0/1 coded for Stan)
     burned_coded = as.numeric(ifelse(`Burned..B..vs..unburned..U.` == "B", 1, 0)),
-    wet_coded = as.numeric(ifelse(`Wet.or.dry.in.2016` == "W", 1, 0))
+    wet_coded = as.numeric(ifelse(`Wet.or.dry.in.2016` == "W", 1, 0)),
+
+    # Year as factor (for hierarchical structure)
+    year_factor = as.factor(year),
+    year_index = as.integer(year_factor)
   ) %>%
   # Remove rows with missing values in key variables
   filter(!is.na(trout_present),
@@ -44,9 +49,13 @@ df_mod <- df %>%
          !is.na(canopy_logit_scaled),
          !is.na(q_log_scaled),
          !is.na(burned_coded),
-         !is.na(wet_coded))
+         !is.na(wet_coded),
+         !is.na(year))
 
 cat("Sample size:", nrow(df_mod), "\n")
+cat("Years:", unique(df_mod$year), "\n")
+cat("Year counts:", table(df_mod$year), "\n")
+cat("Number of years:", length(unique(df_mod$year)), "\n")
 
 #--------------------------------
 ## Prepare data for Stan
@@ -54,6 +63,8 @@ cat("Sample size:", nrow(df_mod), "\n")
 
 stan_data <- list(
   N = nrow(df_mod),
+  N_years = length(unique(df_mod$year)),
+
   # Indicators
   conduct_log = df_mod$conduct_log_scaled,
   max_depth = df_mod$max_depth_scaled,
@@ -61,21 +72,33 @@ stan_data <- list(
   thermal = df_mod$thermal_scaled,
   canopy_logit = df_mod$canopy_logit_scaled,
   q_log = df_mod$q_log_scaled,
+
   # Predictors
   burned = df_mod$burned_coded,
   wet = df_mod$wet_coded,
+
+  # Hierarchical grouping
+  year_index = df_mod$year_index,
+
   # Outcome
   trout = df_mod$trout_present
 )
+
+cat("\nData summary for Stan:\n")
+cat("  N observations:", stan_data$N, "\n")
+cat("  N years:", stan_data$N_years, "\n")
+cat("  Year indices:", sort(unique(stan_data$year_index)), "\n")
 
 #--------------------------------
 ## Compile and fit Stan model
 #--------------------------------
 
 # Compile the model
-model <- stan_model("Code/stream_quality_full.stan")
+cat("\nCompiling hierarchical model...\n")
+model <- stan_model("Code/stream_quality_hierarchical.stan")
 
 # Fit the model
+cat("\nFitting hierarchical model...\n")
 fit <- sampling(
   object = model,
   data = stan_data,
@@ -92,10 +115,12 @@ fit <- sampling(
 ## Print summary
 #--------------------------------
 
+cat("\n=== HIERARCHICAL PARAMETERS ===\n")
+print(fit, pars = c("sigma_quality", "sigma_year", "year_effect"))
+
 cat("\n=== FACTOR LOADINGS ===\n")
 print(fit, pars = c("beta_conduct", "beta_depth", "beta_do", "beta_thermal",
                    "beta_canopy", "beta_q"))
-
 
 cat("\n=== INTERCEPTS ===\n")
 print(fit, pars = c("a_conduct", "a_depth", "a_do", "a_thermal",
@@ -106,7 +131,7 @@ print(fit, pars = c("sigma_conduct", "sigma_depth", "sigma_do", "sigma_thermal",
                    "sigma_canopy", "sigma_q"))
 
 cat("\n=== EFFECTS ON STREAM QUALITY ===\n")
-print(fit, pars = c("alpha_quality", "beta_burned", "beta_wet"))
+print(fit, pars = c("beta_burned", "beta_wet"))
 
 cat("\n=== EFFECT ON TROUT PRESENCE ===\n")
 print(fit, pars = c("alpha_trout", "beta_trout"))
@@ -138,6 +163,24 @@ cat("Min ESS (bulk):", min(ess_bulk, na.rm = TRUE), "\n")
 
 # Extract draws (convert to format compatible with bayesplot)
 draws <- as.array(fit)
+
+# Plot hierarchical parameters
+p0 <- mcmc_areas(draws,
+                pars = c("sigma_quality", "sigma_year"),
+                prob = 0.95) +
+  labs(title = "Hierarchical Variance Parameters",
+       subtitle = "Shrinkage on latent variable and year effects")
+
+print(p0)
+
+# Plot year effects
+p0b <- mcmc_areas(draws,
+                 pars = c("year_effect[1]", "year_effect[2]"),
+                 prob = 0.95) +
+  labs(title = "Year-Specific Effects on Stream Quality",
+       subtitle = "Random effects for 2016 and 2017")
+
+print(p0b)
 
 # Plot factor loadings
 p1 <- mcmc_areas(draws,
@@ -180,12 +223,12 @@ print(p4)
 #--------------------------------
 
 # Save the fitted model
-saveRDS(fit, file = "Models/stan_model_full_fit.rds")
+saveRDS(fit, file = "Models/stan_model_hierarchical_fit.rds")
 
 # Save summary
 summary_df <- as.data.frame(summary(fit)$summary)
-write.csv(summary_df, "Models/stan_model_full_summary.csv", row.names = TRUE)
+write.csv(summary_df, "Models/stan_model_hierarchical_summary.csv", row.names = TRUE)
 
 cat("\nModel fitting complete!\n")
-cat("Model saved to: Models/stan_model_full_fit.rds\n")
-cat("Summary saved to: Models/stan_model_full_summary.csv\n")
+cat("Model saved to: Models/stan_model_hierarchical_fit.rds\n")
+cat("Summary saved to: Models/stan_model_hierarchical_summary.csv\n")

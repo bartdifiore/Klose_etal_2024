@@ -1,4 +1,4 @@
-// Bayesian Latent Variable Model for Stream Quality - Full Model
+// Bayesian Latent Variable Model for Stream Quality - Hierarchical Model
 // Based on Scott Brown's ecological condition model
 // https://github.com/cbrown5/ecological-condition-latent-model
 //
@@ -6,11 +6,13 @@
 // - Latent variable "stream_quality" (nu) represents unobserved stream condition
 // - 6 environmental indicators: conductivity, depth, DO, thermal, canopy, Q
 // - Predictors: burned status, wet/dry (drought)
+// - Year-level random effects for partial pooling
+// - Hierarchical shrinkage on latent variable variance
 // - Outcome: trout presence/absence
-// - Latent variable follows normal distribution with mean predicted by burn/drought
 
 data {
   int<lower=1> N;  // Number of observations
+  int<lower=1> N_years;  // Number of years (should be 2)
 
   // Environmental indicators (all scaled)
   vector[N] conduct_log;
@@ -24,13 +26,23 @@ data {
   vector[N] burned;     // 1 = burned, 0 = unburned
   vector[N] wet;        // 1 = wet, 0 = dry
 
+  // Hierarchical grouping
+  int<lower=1, upper=N_years> year_index[N];  // Year index for each observation
+
   // Outcome
   int<lower=0, upper=1> trout[N];  // Binary: 1 = present, 0 = absent
 }
 
 parameters {
-  // Latent variable: stream quality for each observation
-  vector[N] stream_quality_raw;  // Non-centered parameterization
+  // Latent variable: stream quality for each observation (non-centered)
+  vector[N] stream_quality_raw;
+
+  // Hierarchical shrinkage on latent variable
+  real<lower=0> sigma_quality;  // SD of latent variable deviations
+
+  // Year-level random effects
+  vector[N_years] year_effect_raw;
+  real<lower=0> sigma_year;
 
   // Factor loadings (how strongly each indicator reflects stream quality)
   real beta_conduct;
@@ -78,14 +90,26 @@ transformed parameters {
   vector[N] stream_quality_hat;
   vector[N] stream_quality;
 
+  // Year effects (non-centered)
+  vector[N_years] year_effect;
+
   // Predicted probability of trout presence
   vector[N] trout_logit;
 
-  // Stream quality predicted by burn and drought (no intercept for identification)
-  stream_quality_hat = beta_burned * burned + beta_wet * wet;
+  // Non-centered parameterization for year effects
+  year_effect = year_effect_raw * sigma_year;
 
-  // Non-centered parameterization: stream_quality ~ normal(stream_quality_hat, 1)
-  stream_quality = stream_quality_hat + stream_quality_raw;
+  // Stream quality predicted by year effect + burn + drought
+  // No global intercept for identification (absorbed into year effects)
+  for (i in 1:N) {
+    stream_quality_hat[i] = year_effect[year_index[i]] +
+                            beta_burned * burned[i] +
+                            beta_wet * wet[i];
+  }
+
+  // Non-centered parameterization with hierarchical shrinkage
+  // stream_quality ~ normal(stream_quality_hat, sigma_quality)
+  stream_quality = stream_quality_hat + stream_quality_raw * sigma_quality;
 
   // Linear predictor: indicator = intercept + loading * stream_quality
   conduct_hat = a_conduct + beta_conduct * stream_quality;
@@ -103,7 +127,14 @@ model {
   // Prior on latent variable (non-centered)
   stream_quality_raw ~ std_normal();
 
-  // Priors on stream quality predictors (no intercept for identification)
+  // Hierarchical prior on latent variable variance
+  sigma_quality ~ exponential(2);  // Strong regularization
+
+  // Hierarchical prior on year effects
+  year_effect_raw ~ std_normal();
+  sigma_year ~ exponential(1);  // Allows year-level variation
+
+  // Priors on stream quality predictors
   // Tighter priors for stronger regularization with small sample size
   beta_burned ~ normal(0, 0.5);
   beta_wet ~ normal(0, 0.5);

@@ -1,7 +1,7 @@
 #--------------------------------
-## Fit Full Stan latent variable model
+## Fit Full Stan latent variable model - NO PREDICTORS
 ## Using rstan
-## Includes: 6 indicators, burn/drought predictors, trout outcome
+## Includes: 6 indicators, NO burn/drought predictors, trout outcome
 #--------------------------------
 
 library(tidyverse)
@@ -61,9 +61,6 @@ stan_data <- list(
   thermal = df_mod$thermal_scaled,
   canopy_logit = df_mod$canopy_logit_scaled,
   q_log = df_mod$q_log_scaled,
-  # Predictors
-  burned = df_mod$burned_coded,
-  wet = df_mod$wet_coded,
   # Outcome
   trout = df_mod$trout_present
 )
@@ -73,7 +70,7 @@ stan_data <- list(
 #--------------------------------
 
 # Compile the model
-model <- stan_model("Code/stream_quality_full.stan")
+model <- stan_model("Code/stream_quality_full_nopred.stan")
 
 # Fit the model
 fit <- sampling(
@@ -81,8 +78,8 @@ fit <- sampling(
   data = stan_data,
   chains = 4,
   cores = 4,
-  warmup = 2000,
-  iter = 4000,  # Total iterations = warmup + sampling
+  warmup = 4000,
+  iter = 8000,  # Total iterations = warmup + sampling
   seed = 123,
   control = list(adapt_delta = 0.99, max_treedepth = 12),
   refresh = 500  # Print progress every 500 iterations
@@ -104,9 +101,6 @@ print(fit, pars = c("a_conduct", "a_depth", "a_do", "a_thermal",
 cat("\n=== RESIDUAL SDs ===\n")
 print(fit, pars = c("sigma_conduct", "sigma_depth", "sigma_do", "sigma_thermal",
                    "sigma_canopy", "sigma_q"))
-
-cat("\n=== EFFECTS ON STREAM QUALITY ===\n")
-print(fit, pars = c("alpha_quality", "beta_burned", "beta_wet"))
 
 cat("\n=== EFFECT ON TROUT PRESENCE ===\n")
 print(fit, pars = c("alpha_trout", "beta_trout"))
@@ -145,18 +139,9 @@ p1 <- mcmc_areas(draws,
                         "beta_thermal", "beta_canopy", "beta_q"),
                 prob = 0.95) +
   labs(title = "Factor Loadings (Stream Quality Indicators)",
-       subtitle = "How strongly each indicator reflects stream quality")
+       subtitle = "6 indicators, no burn/wet predictors")
 
 print(p1)
-
-# Plot effects of burn and drought on stream quality
-p2 <- mcmc_areas(draws,
-                pars = c("beta_burned", "beta_wet"),
-                prob = 0.95) +
-  labs(title = "Effects of Disturbance on Stream Quality",
-       subtitle = "Burned vs Unburned, Wet vs Dry")
-
-print(p2)
 
 # Plot effect of stream quality on trout
 p3 <- mcmc_areas(draws,
@@ -180,12 +165,13 @@ print(p4)
 #--------------------------------
 
 # Save the fitted model
-saveRDS(fit, file = "Models/stan_model_full_fit.rds")
+saveRDS(fit, file = "Models/stan_model_full_nopred_fit.rds")
 
 # Save summary
 summary_df <- as.data.frame(summary(fit)$summary)
-write.csv(summary_df, "Models/stan_model_full_summary.csv", row.names = TRUE)
+write.csv(summary_df, "Models/stan_model_full_nopred_summary.csv", row.names = TRUE)
 
 cat("\nModel fitting complete!\n")
-cat("Model saved to: Models/stan_model_full_fit.rds\n")
-cat("Summary saved to: Models/stan_model_full_summary.csv\n")
+cat("Model saved to: Models/stan_model_full_nopred_fit.rds\n")
+cat("Summary saved to: Models/stan_model_full_nopred_summary.csv\n")
+

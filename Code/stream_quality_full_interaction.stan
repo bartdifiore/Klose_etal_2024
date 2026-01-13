@@ -1,11 +1,11 @@
-// Bayesian Latent Variable Model for Stream Quality - Full Model
+// Bayesian Latent Variable Model for Stream Quality - Full Model with Interaction
 // Based on Scott Brown's ecological condition model
 // https://github.com/cbrown5/ecological-condition-latent-model
 //
 // Model structure:
 // - Latent variable "stream_quality" (nu) represents unobserved stream condition
 // - 6 environmental indicators: conductivity, depth, DO, thermal, canopy, Q
-// - Predictors: burned status, wet/dry (drought)
+// - Predictors: burned status, wet/dry (drought), AND their interaction
 // - Outcome: trout presence/absence
 // - Latent variable follows normal distribution with mean predicted by burn/drought
 
@@ -56,9 +56,10 @@ parameters {
   real<lower=0> sigma_canopy;
   real<lower=0> sigma_q;
 
-  // Effects of burn and drought on stream quality
-  real beta_burned;   // Effect of burn on stream quality
-  real beta_wet;      // Effect of wet vs dry on stream quality
+  // Effects of burn and drought on stream quality (with interaction)
+  real beta_burned;        // Main effect of burn on stream quality
+  real beta_wet;           // Main effect of wet vs dry on stream quality
+  real beta_interaction;   // Interaction: does burn effect depend on wet/dry?
 
   // Effect of stream quality on trout presence
   real beta_trout;    // Logistic regression coefficient
@@ -81,8 +82,10 @@ transformed parameters {
   // Predicted probability of trout presence
   vector[N] trout_logit;
 
-  // Stream quality predicted by burn and drought (no intercept for identification)
-  stream_quality_hat = beta_burned * burned + beta_wet * wet;
+  // Stream quality predicted by burn, drought, AND their interaction (no intercept for identification)
+  stream_quality_hat = beta_burned * burned +
+                       beta_wet * wet +
+                       beta_interaction * burned .* wet;
 
   // Non-centered parameterization: stream_quality ~ normal(stream_quality_hat, 1)
   stream_quality = stream_quality_hat + stream_quality_raw;
@@ -107,6 +110,7 @@ model {
   // Tighter priors for stronger regularization with small sample size
   beta_burned ~ normal(0, 0.5);
   beta_wet ~ normal(0, 0.5);
+  beta_interaction ~ normal(0, 0.25);  // Even tighter for interaction term
 
   // Priors on intercepts (weakly informative, centered at 0)
   a_conduct ~ normal(0, 10);
